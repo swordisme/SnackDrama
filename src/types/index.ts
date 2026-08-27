@@ -31,5 +31,5 @@ export interface CoinPackage {
   name: string
   coins: number
   price_usd: number
-  lemon_squeezy_variant_id: string
+  paddle_price_id: string
 }

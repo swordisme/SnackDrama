@@ -5,6 +5,7 @@ import { Lock, Play, Volume2, VolumeX } from 'lucide-react'
 import type { Episode, Series, UserProfile } from '@/types'
 import PaywallModal from './PaywallModal'
 import type { CoinPackage } from '@/types'
+import { usePaddle } from './PaddleProvider'
 
 interface EpisodePlayerProps {
   series: Series
@@ -18,6 +19,7 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
   const [unlockedEpisodes, setUnlockedEpisodes] = useState<Set<string>>(new Set())
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map())
+  const paddle = usePaddle()
 
   // IntersectionObserver: auto-play video in view
   useEffect(() => {
@@ -68,17 +70,20 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
   }, [paywallEpisode, user])
 
   const handleSubscribe = useCallback(() => {
-    // Link to Lemon Squeezy checkout
-    const checkoutUrl = process.env.NEXT_PUBLIC_APP_URL
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/api/checkout/subscription`
-      : '/api/checkout/subscription'
-    window.open(checkoutUrl, '_blank')
-  }, [])
+    if (!paddle || !user) return
+    paddle.Checkout.open({
+      items: [{ priceId: process.env.NEXT_PUBLIC_PADDLE_PRICE_ID_100 ?? '', quantity: 1 }],
+      customData: { user_id: user.id },
+    })
+  }, [paddle, user])
 
-  const handleBuyCoins = useCallback((_pkg: CoinPackage) => {
-    // Link to Lemon Squeezy checkout for coins
-    window.open('/api/checkout/coins', '_blank')
-  }, [])
+  const handleBuyCoins = useCallback((pkg: CoinPackage) => {
+    if (!paddle || !user) return
+    paddle.Checkout.open({
+      items: [{ priceId: pkg.paddle_price_id, quantity: 1 }],
+      customData: { user_id: user.id },
+    })
+  }, [paddle, user])
 
   return (
     <>

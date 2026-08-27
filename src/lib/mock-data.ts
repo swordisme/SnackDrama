@@ -43,7 +43,7 @@ function getEpisodeTitle(n: number): string {
 }
 
 export const COIN_PACKAGES = [
-  { id: 'pkg-50', name: 'Starter Pack', coins: 50, price_usd: 4.99, lemon_squeezy_variant_id: 'variant_50' },
-  { id: 'pkg-150', name: 'Popular Pack', coins: 150, price_usd: 9.99, lemon_squeezy_variant_id: 'variant_150' },
-  { id: 'pkg-500', name: 'Mega Pack', coins: 500, price_usd: 24.99, lemon_squeezy_variant_id: 'variant_500' },
+  { id: 'pkg-50',  name: 'Starter Pack', coins: 50,  price_usd: 4.99,  paddle_price_id: process.env.NEXT_PUBLIC_PADDLE_PRICE_ID_100 ?? '' },
+  { id: 'pkg-150', name: 'Popular Pack', coins: 150, price_usd: 9.99,  paddle_price_id: process.env.NEXT_PUBLIC_PADDLE_PRICE_ID_100 ?? '' },
+  { id: 'pkg-500', name: 'Mega Pack',   coins: 500, price_usd: 24.99, paddle_price_id: process.env.NEXT_PUBLIC_PADDLE_PRICE_ID_100 ?? '' },
 ]
