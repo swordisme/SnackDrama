@@ -1,11 +1,14 @@
 'use client'
 
 import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Lock, Play, Volume2, VolumeX } from 'lucide-react'
+import type { User } from '@supabase/supabase-js'
 import type { Episode, Series, UserProfile } from '@/types'
 import PaywallModal from './PaywallModal'
 import type { CoinPackage } from '@/types'
 import { usePaddle } from './PaddleProvider'
+import { createClient } from '@/lib/supabase/client'
 
 interface EpisodePlayerProps {
   series: Series
@@ -14,12 +17,29 @@ interface EpisodePlayerProps {
 }
 
 export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerProps) {
+  const router = useRouter()
   const [paywallEpisode, setPaywallEpisode] = useState<Episode | null>(null)
   const [muted, setMuted] = useState(true)
   const [unlockedEpisodes, setUnlockedEpisodes] = useState<Set<string>>(new Set())
+  const [authUser, setAuthUser] = useState<User | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map())
   const paddle = usePaddle()
+
+  // Sync live auth session client-side — never rely solely on server prop
+  useEffect(() => {
+    const supabase = createClient()
+
+    supabase.auth.getUser().then(({ data }) => {
+      setAuthUser(data.user)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   // IntersectionObserver: auto-play video in view
   useEffect(() => {
@@ -70,12 +90,19 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
   }, [paywallEpisode, user])
 
   const handleSubscribe = useCallback(() => {
-    if (!paddle || !user) return
+    if (!authUser) {
+      router.push('/login?returnTo=/watch/forbidden-lesson')
+      return
+    }
+    if (!paddle) {
+      console.error('[Paddle] instance not initialized — checkout aborted')
+      return
+    }
     paddle.Checkout.open({
       items: [{ priceId: process.env.NEXT_PUBLIC_PADDLE_PRICE_ID_100 ?? '', quantity: 1 }],
-      customData: { user_id: user.id },
+      customData: { user_id: authUser.id },
     })
-  }, [paddle, user])
+  }, [paddle, authUser, router])
 
   const handleBuyCoins = useCallback((pkg: CoinPackage) => {
     const activePriceId =
@@ -83,23 +110,25 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
       process.env.NEXT_PUBLIC_PADDLE_PRICE_ID_100 ||
       'pri_01m10azbe4dt3qzh22p7aepjg4'
 
-    console.log('[Paddle] checkout triggered:', { activePriceId, paddle: !!paddle, userId: user?.id })
+    console.log('[Paddle] checkout triggered:', { activePriceId, paddle: !!paddle, userId: authUser?.id })
+
+    if (!authUser) {
+      console.warn('[Paddle] no auth session — redirecting to login')
+      router.push('/login?returnTo=/watch/forbidden-lesson')
+      return
+    }
 
     if (!paddle) {
       console.error('[Paddle] instance not initialized — checkout aborted')
       return
     }
 
-    if (!user) {
-      console.error('[Paddle] no user session — checkout aborted')
-      return
-    }
-
     paddle.Checkout.open({
       items: [{ priceId: activePriceId, quantity: 1 }],
-      customData: { user_id: user.id },
+      customData: { user_id: authUser.id },
     })
-  }, [paddle, user])
+  }, [paddle, authUser, router])
+
 
   return (
     <>

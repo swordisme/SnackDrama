@@ -1,6 +1,8 @@
 import { MOCK_SERIES, MOCK_EPISODES } from '@/lib/mock-data'
 import EpisodePlayer from '@/components/EpisodePlayer'
 import Header from '@/components/Header'
+import { createClient } from '@/lib/supabase/server'
+import type { UserProfile } from '@/types'
 
 interface WatchPageProps {
   params: Promise<{ series: string }>
@@ -21,10 +23,27 @@ export default async function WatchPage({ params }: WatchPageProps) {
     )
   }
 
+  // Fetch authenticated user profile from Supabase
+  let userProfile: UserProfile | null = null
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, email, coin_balance, subscription_active, subscription_expires_at')
+        .eq('id', user.id)
+        .single()
+      userProfile = profile ?? null
+    }
+  } catch {
+    // No session or profiles table not yet set up — continue as guest
+  }
+
   return (
     <div className="bg-black min-h-screen">
-      <Header user={null} />
-      <EpisodePlayer series={series} episodes={episodes} user={null} />
+      <Header user={userProfile} />
+      <EpisodePlayer series={series} episodes={episodes} user={userProfile} />
     </div>
   )
 }
