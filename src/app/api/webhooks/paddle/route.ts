@@ -26,6 +26,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 401 })
   }
 
+  if (!event) {
+    return NextResponse.json({ error: 'Failed to unmarshal event' }, { status: 400 })
+  }
+
   if (event.eventType === EventName.TransactionCompleted) {
     const transaction = event.data
 
