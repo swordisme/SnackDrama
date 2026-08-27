@@ -1,9 +1,11 @@
-﻿import { NextRequest, NextResponse } from 'next/server'
-import { Paddle, EventName } from '@paddle/paddle-node-sdk'
+import { NextRequest, NextResponse } from 'next/server'
+import { Paddle, Environment, EventName } from '@paddle/paddle-node-sdk'
 import { createServiceClient } from '@/lib/supabase/server'
 
 const paddle = new Paddle(process.env.PADDLE_API_KEY ?? '', {
-  environment: 'sandbox',
+  environment: process.env.NEXT_PUBLIC_PADDLE_ENV === 'production'
+    ? Environment.production
+    : Environment.sandbox,
 })
 
 // Coins awarded per price ID
