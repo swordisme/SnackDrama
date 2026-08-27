@@ -1,9 +1,9 @@
-﻿'use client'
+'use client'
 
 import Script from 'next/script'
 import { createContext, useContext, useRef, useState } from 'react'
 
-// Minimal type for the Paddle.js global (loaded via CDN)
+// Minimal types for Paddle.js v2 CDN global
 interface PaddleCheckoutOptions {
   items: { priceId: string; quantity: number }[]
   customData?: Record<string, string>
@@ -32,14 +32,25 @@ export default function PaddleProvider({ children }: { children: React.ReactNode
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const win = window as any
-    if (!win.Paddle) return
+    if (!win.Paddle) {
+      console.error('Paddle.js failed to load from CDN')
+      return
+    }
 
-    win.Paddle.Environment.set('sandbox')
-    win.Paddle.Initialize({
-      token: process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN ?? '',
-    })
-
-    setPaddle(win.Paddle as PaddleInstance)
+    try {
+      // Paddle.js v2: set sandbox environment BEFORE Initialize
+      win.Paddle.Environment.set('sandbox')
+      win.Paddle.Initialize({
+        token: process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN ?? '',
+        eventCallback: (event: { name: string }) => {
+          console.log('[Paddle event]', event.name)
+        },
+      })
+      console.log('[Paddle] Initialized in sandbox mode')
+      setPaddle(win.Paddle as PaddleInstance)
+    } catch (err) {
+      console.error('[Paddle] Initialization error:', err)
+    }
   }
 
   return (
@@ -48,8 +59,10 @@ export default function PaddleProvider({ children }: { children: React.ReactNode
         src="https://cdn.paddle.com/paddle/v2/paddle.js"
         strategy="afterInteractive"
         onLoad={handlePaddleLoad}
+        onError={() => console.error('[Paddle] Script failed to load')}
       />
       {children}
     </PaddleContext.Provider>
   )
 }
+

@@ -78,9 +78,25 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
   }, [paddle, user])
 
   const handleBuyCoins = useCallback((pkg: CoinPackage) => {
-    if (!paddle || !user) return
+    const activePriceId =
+      pkg.paddle_price_id ||
+      process.env.NEXT_PUBLIC_PADDLE_PRICE_ID_100 ||
+      'pri_01m10azbe4dt3qzh22p7aepjg4'
+
+    console.log('[Paddle] checkout triggered:', { activePriceId, paddle: !!paddle, userId: user?.id })
+
+    if (!paddle) {
+      console.error('[Paddle] instance not initialized — checkout aborted')
+      return
+    }
+
+    if (!user) {
+      console.error('[Paddle] no user session — checkout aborted')
+      return
+    }
+
     paddle.Checkout.open({
-      items: [{ priceId: pkg.paddle_price_id, quantity: 1 }],
+      items: [{ priceId: activePriceId, quantity: 1 }],
       customData: { user_id: user.id },
     })
   }, [paddle, user])
