@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { Paddle, Environment, EventName } from '@paddle/paddle-node-sdk'
 import { createServiceClient } from '@/lib/supabase/server'
 
@@ -104,34 +104,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Database connection failed' }, { status: 500 })
     }
 
-    // 6. Read current balance
+    // 6. Read current balance (maybeSingle — null if row doesn't exist yet)
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('coin_balance')
       .eq('id', userId)
-      .single()
+      .maybeSingle()
 
     if (profileError) {
       console.error('[Paddle Webhook] ✖ profile fetch error:', profileError)
       return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 })
     }
 
-    if (!profile) {
-      console.error('[Paddle Webhook] ✖ no profile found for userId:', userId)
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
+    const newBalance = (profile?.coin_balance ?? 0) + coinsToCredit
+    console.log('[Paddle Webhook] updating coin_balance:', profile?.coin_balance ?? 'NEW', '→', newBalance)
 
-    const newBalance = (profile.coin_balance ?? 0) + coinsToCredit
-    console.log('[Paddle Webhook] updating coin_balance:', profile.coin_balance, '→', newBalance)
-
-    // 7. Credit coins
+    // 7. Upsert — creates the row if it doesn't exist, updates if it does
     const { error: updateError } = await supabase
       .from('profiles')
-      .update({ coin_balance: newBalance })
-      .eq('id', userId)
+      .upsert({
+        id: userId,
+        coin_balance: newBalance,
+        updated_at: new Date().toISOString(),
+      })
 
     if (updateError) {
-      console.error('[Paddle Webhook] ✖ failed to update coin_balance:', updateError)
+      console.error('[Paddle Webhook] ✖ failed to upsert coin_balance:', updateError)
       return NextResponse.json({ error: 'Failed to credit coins' }, { status: 500 })
     }
 
