@@ -4,6 +4,9 @@ import Header from '@/components/Header'
 import { createClient } from '@/lib/supabase/server'
 import type { UserProfile } from '@/types'
 
+// Never serve a cached version — always read fresh session cookies
+export const dynamic = 'force-dynamic'
+
 interface WatchPageProps {
   params: Promise<{ series: string }>
 }
@@ -33,7 +36,7 @@ export default async function WatchPage({ params }: WatchPageProps) {
         .from('profiles')
         .select('id, email, coin_balance, subscription_active, subscription_expires_at')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
       userProfile = profile ?? null
     }
   } catch {

@@ -95,6 +95,32 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
     return () => observers.forEach((obs) => obs.disconnect())
   }, [episodes])
 
+  // Fetch live coin balance from Supabase whenever authUser is resolved/changed
+  useEffect(() => {
+    if (!authUser?.id) return
+
+    async function fetchBalance() {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('coin_balance')
+        .eq('id', authUser!.id)
+        .maybeSingle()
+
+      if (error) {
+        console.error('[EpisodePlayer] fetchBalance error:', error.message)
+        return
+      }
+
+      if (data && typeof data.coin_balance === 'number') {
+        setLiveCoinBalance(data.coin_balance)
+        console.log('[EpisodePlayer] fetched coin_balance from DB:', data.coin_balance)
+      }
+    }
+
+    fetchBalance()
+  }, [authUser?.id])
+
   const handleEpisodeClick = useCallback(
     (episode: Episode) => {
       if (!episode.is_free && !unlockedEpisodes.has(episode.id)) {
@@ -104,14 +130,44 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
     [unlockedEpisodes]
   )
 
-  const handleUnlockWithCoins = useCallback(() => {
+  const handleUnlockWithCoins = useCallback(async () => {
     if (!paywallEpisode) return
+    if (!authUser) {
+      router.push('/login?returnTo=/watch/forbidden-lesson')
+      return
+    }
     if (liveCoinBalance < 10) return
-    // In production, call /api/episodes/unlock
+
+    // Optimistic UI update
     setUnlockedEpisodes((prev) => new Set([...prev, paywallEpisode.id]))
     setLiveCoinBalance((b) => b - 10)
     setPaywallEpisode(null)
-  }, [paywallEpisode, liveCoinBalance])
+
+    // Persist to DB via the unlock API route
+    try {
+      const res = await fetch('/api/episodes/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ episodeId: paywallEpisode.id }),
+      })
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: 'Unknown error' }))
+        console.error('[EpisodePlayer] unlock API error:', error)
+        // Revert optimistic update on failure
+        setUnlockedEpisodes((prev) => {
+          const next = new Set(prev)
+          next.delete(paywallEpisode.id)
+          return next
+        })
+        setLiveCoinBalance((b) => b + 10)
+      } else {
+        console.log('[EpisodePlayer] episode unlocked and coins deducted in DB')
+      }
+    } catch (err) {
+      console.error('[EpisodePlayer] unlock fetch failed:', err)
+    }
+  }, [paywallEpisode, authUser, liveCoinBalance, router])
+
 
   const handleSubscribe = useCallback(() => {
     if (!authUser) {
