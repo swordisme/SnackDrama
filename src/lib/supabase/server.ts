@@ -38,11 +38,17 @@ export async function createServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-  if (!url || !key) {
-    throw new Error(
-      '[createServiceClient] Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars'
-    )
+  if (!url) {
+    console.error('[createServiceClient] ✖ NEXT_PUBLIC_SUPABASE_URL is not set')
+    throw new Error('[createServiceClient] Missing NEXT_PUBLIC_SUPABASE_URL env var')
   }
+
+  if (!key) {
+    console.error('[createServiceClient] ✖ SUPABASE_SERVICE_ROLE_KEY is not set — cannot bypass RLS')
+    throw new Error('[createServiceClient] Missing SUPABASE_SERVICE_ROLE_KEY env var')
+  }
+
+  console.log('[createServiceClient] ✔ using service role key (RLS bypassed)')
 
   return createSupabaseClient(url, key, {
     auth: {

@@ -104,36 +104,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Database connection failed' }, { status: 500 })
     }
 
-    // 6. Read current balance (maybeSingle — null if row doesn't exist yet)
-    const { data: profile, error: profileError } = await supabase
+    // 6. Read current balance (maybeSingle — returns null instead of error if row missing)
+    const { data: currentProfile, error: profileError } = await supabase
       .from('profiles')
       .select('coin_balance')
       .eq('id', userId)
       .maybeSingle()
 
     if (profileError) {
-      console.error('[Paddle Webhook] ✖ profile fetch error:', profileError)
-      return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 })
+      console.error('[Paddle Webhook] ✖ profile fetch error:', JSON.stringify(profileError))
+      console.error('[Paddle Webhook] profile fetch error details:', profileError.message, profileError.code, profileError.details)
+      return NextResponse.json({ error: 'Failed to fetch user profile', details: profileError.message }, { status: 500 })
     }
 
-    const newBalance = (profile?.coin_balance ?? 0) + coinsToCredit
-    console.log('[Paddle Webhook] updating coin_balance:', profile?.coin_balance ?? 'NEW', '→', newBalance)
+    const newBalance = (currentProfile?.coin_balance ?? 0) + coinsToCredit
+    console.log('[Paddle Webhook] coin_balance:', currentProfile?.coin_balance ?? 'NEW ROW', '→', newBalance)
 
-    // 7. Upsert — creates the row if it doesn't exist, updates if it does
-    const { error: updateError } = await supabase
+    // 7. Upsert with onConflict:'id' — atomic create-or-update, bypasses RLS via service key
+    const { error: upsertError } = await supabase
       .from('profiles')
-      .upsert({
-        id: userId,
-        coin_balance: newBalance,
-        updated_at: new Date().toISOString(),
-      })
+      .upsert(
+        {
+          id: userId,
+          coin_balance: newBalance,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      )
 
-    if (updateError) {
-      console.error('[Paddle Webhook] ✖ failed to upsert coin_balance:', updateError)
-      return NextResponse.json({ error: 'Failed to credit coins' }, { status: 500 })
+    if (upsertError) {
+      console.error('[Paddle Webhook] ✖ failed to upsert coin_balance:', JSON.stringify(upsertError))
+      console.error('[Paddle Webhook] upsert error details:', upsertError.message, upsertError.code, upsertError.details)
+      return NextResponse.json({ error: 'Failed to credit coins', details: upsertError.message }, { status: 500 })
     }
 
-    // 8. Record transaction log
+    // 8. Record transaction log (non-fatal)
     const { error: txError } = await supabase.from('coin_transactions').insert({
       user_id: userId,
       amount: coinsToCredit,
@@ -142,8 +147,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (txError) {
-      // Non-fatal — coins already credited; log but don't fail the webhook
-      console.warn('[Paddle Webhook] ⚠ coin_transactions insert failed (non-fatal):', txError)
+      console.warn('[Paddle Webhook] ⚠ coin_transactions insert failed (non-fatal):', JSON.stringify(txError))
     }
 
     console.log('[Paddle Webhook] ✔ credited', coinsToCredit, 'coins to user', userId)
