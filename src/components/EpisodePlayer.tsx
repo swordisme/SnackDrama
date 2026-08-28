@@ -148,7 +148,11 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
       const res = await fetch('/api/episodes/unlock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ episodeId: paywallEpisode.id }),
+        body: JSON.stringify({
+          episodeId: paywallEpisode.id,
+          seriesId: series.id || series.slug || '',
+          coinCost: 10,
+        }),
       })
       if (!res.ok) {
         const { error } = await res.json().catch(() => ({ error: 'Unknown error' }))
@@ -161,7 +165,12 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
         })
         setLiveCoinBalance((b) => b + 10)
       } else {
-        console.log('[EpisodePlayer] episode unlocked and coins deducted in DB')
+        // Use the authoritative newBalance from the server
+        const { newBalance } = await res.json()
+        if (typeof newBalance === 'number') {
+          setLiveCoinBalance(newBalance)
+        }
+        console.log('[EpisodePlayer] episode unlocked, newBalance:', newBalance)
       }
     } catch (err) {
       console.error('[EpisodePlayer] unlock fetch failed:', err)

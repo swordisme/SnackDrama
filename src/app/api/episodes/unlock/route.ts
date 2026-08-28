@@ -5,52 +5,63 @@ export async function POST(req: NextRequest) {
   const supabase = await createClient()
 
   // Verify user is logged in
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { episodeId, seriesId } = await req.json() as { episodeId: string; seriesId: string }
+  // Accept flexible param names from different callers
+  const body = await req.json()
+  const episodeId: string = body.episodeId || body.episode_id || body.id
+  const seriesId: string  = body.seriesId  || body.series_id  || body.seriesSlug || body.slug || ''
+  const coinCost: number  = body.coinCost  || body.coins      || body.cost       || 10
 
-  if (!episodeId || !seriesId) {
-    return NextResponse.json({ error: 'Missing episodeId or seriesId' }, { status: 400 })
+  if (!episodeId) {
+    return NextResponse.json({ error: 'Missing episodeId' }, { status: 400 })
   }
 
-  // Use service client for privileged operations
+  // Use service client for privileged DB operations (bypasses RLS)
   const serviceSupabase = await createServiceClient()
 
-  // Get user profile with coin balance
-  const { data: profile } = await serviceSupabase
+  // Get current coin balance
+  const { data: profile, error: profileError } = await serviceSupabase
     .from('profiles')
     .select('coin_balance')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
+
+  if (profileError) {
+    console.error('[unlock] profile fetch error:', JSON.stringify(profileError))
+    return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 })
+  }
 
   if (!profile) {
     return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
   }
 
-  if (profile.coin_balance < 10) {
+  if (profile.coin_balance < coinCost) {
     return NextResponse.json({ error: 'Insufficient coins' }, { status: 400 })
   }
 
-  const newBalance = profile.coin_balance - 10
+  const newBalance = profile.coin_balance - coinCost
 
   // Deduct coins
-  await serviceSupabase
+  const { error: updateError } = await serviceSupabase
     .from('profiles')
     .update({ coin_balance: newBalance })
     .eq('id', user.id)
 
-  // Record transaction
+  if (updateError) {
+    console.error('[unlock] coin deduction error:', JSON.stringify(updateError))
+    return NextResponse.json({ error: 'Failed to deduct coins' }, { status: 500 })
+  }
+
+  // Record spend transaction
   await serviceSupabase.from('coin_transactions').insert({
     user_id: user.id,
-    amount: -10,
+    amount: -coinCost,
     type: 'spend',
-    description: `Unlocked episode ${episodeId}`,
+    description: `Unlocked episode ${episodeId}${seriesId ? ` (series: ${seriesId})` : ''}`,
   })
 
   // Record unlock
