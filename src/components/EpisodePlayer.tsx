@@ -22,9 +22,11 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
   const [muted, setMuted] = useState(true)
   const [unlockedEpisodes, setUnlockedEpisodes] = useState<Set<string>>(new Set())
   const [authUser, setAuthUser] = useState<User | null>(null)
+  // Live coin balance — initialised from server prop, updated after checkout
+  const [liveCoinBalance, setLiveCoinBalance] = useState<number>(user?.coin_balance ?? 0)
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map())
-  const paddle = usePaddle()
+  const { paddle, onCheckoutComplete } = usePaddle()
 
   // Sync live auth session client-side — never rely solely on server prop
   useEffect(() => {
@@ -41,6 +43,28 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
     return () => subscription.unsubscribe()
   }, [])
 
+  // Subscribe to Paddle checkout.completed — re-fetch profile for live balance update
+  useEffect(() => {
+    const unsubscribe = onCheckoutComplete(async () => {
+      console.log('[EpisodePlayer] checkout.completed — refreshing coin balance')
+      // Give the webhook ~2 s to credit coins before re-fetching
+      await new Promise((r) => setTimeout(r, 2000))
+      const supabase = createClient()
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      if (!currentUser) return
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('coin_balance')
+        .eq('id', currentUser.id)
+        .maybeSingle()
+      if (profile) {
+        setLiveCoinBalance(profile.coin_balance ?? 0)
+        console.log('[EpisodePlayer] coin balance refreshed:', profile.coin_balance)
+      }
+    })
+    return unsubscribe
+  }, [onCheckoutComplete])
+
   // IntersectionObserver: auto-play video in view
   useEffect(() => {
     const observers: IntersectionObserver[] = []
@@ -50,7 +74,6 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
         (entries) => {
           entries.forEach((entry) => {
             if (entry.isIntersecting) {
-              // Pause all others
               videoRefs.current.forEach((v, vid) => {
                 if (vid !== id) {
                   v.pause()
@@ -83,11 +106,12 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
 
   const handleUnlockWithCoins = useCallback(() => {
     if (!paywallEpisode) return
-    if (!user || user.coin_balance < 10) return
+    if (liveCoinBalance < 10) return
     // In production, call /api/episodes/unlock
     setUnlockedEpisodes((prev) => new Set([...prev, paywallEpisode.id]))
+    setLiveCoinBalance((b) => b - 10)
     setPaywallEpisode(null)
-  }, [paywallEpisode, user])
+  }, [paywallEpisode, liveCoinBalance])
 
   const handleSubscribe = useCallback(() => {
     if (!authUser) {
@@ -128,6 +152,7 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
       customData: { user_id: authUser.id },
     })
   }, [paddle, authUser, router])
+
 
 
   return (
@@ -253,7 +278,7 @@ export default function EpisodePlayer({ series, episodes, user }: EpisodePlayerP
       {paywallEpisode && (
         <PaywallModal
           episodeNumber={paywallEpisode.episode_number}
-          userCoinBalance={user?.coin_balance ?? 0}
+          userCoinBalance={liveCoinBalance}
           onClose={() => setPaywallEpisode(null)}
           onUnlockWithCoins={handleUnlockWithCoins}
           onSubscribe={handleSubscribe}
